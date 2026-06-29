@@ -38,16 +38,12 @@ Hardware shorthand: **H200** = 8× NVIDIA H200 SXM5 (Hopper SM 9.0a, 141 GB HBM3
 
 ---
 
-## In progress — GLM-5.2 quantization family
+## Shipped — GLM-5.2 W4A16 + MTP
 
-Companion to the dsv4 family above. One base model (753B MoE, 40B active, native 1M context, MLA + DSA + IndexShare + MTP). Three routed-expert formats targeting the same hardware tiers as dsv4. **All three are private work-in-progress as of 2026-06-21.**
+GLM-5.2 (744B MoE, ~40B active, MLA + DeepSeek Sparse Attention, native 1M context, MIT). We shipped one artifact: **W4A16 INT4** on the routed experts with the **BF16 MTP draft head preserved** for speculative decoding (attention, dense layers 0–2, shared experts, router, embeddings, lm_head, and MTP layer 78 stay BF16).
 
-| Repo | Base | Routed experts | MTP | On-disk | Min hardware (TP=2) | When to pick |
-|---|---|---|---|---|---|---|
-| [W4A16-FP8](https://huggingface.co/canada-quant/GLM-5.2-W4A16-FP8) · [src](https://github.com/canada-quant/glm52-w4a16-fp8) | GLM-5.2 | W4A16 INT4 g=128 | no | ~390 GB | H200 / H100 / RTX PRO 6000 | maximum compatibility, no MTP needed |
-| [W4A16-FP8-MTP](https://huggingface.co/canada-quant/GLM-5.2-W4A16-FP8-MTP) · [src](https://github.com/canada-quant/glm52-w4a16-fp8-mtp) | GLM-5.2 | W4A16 INT4 g=128 | yes (BF16) | ~405 GB | H200 / RTX PRO 6000 | best $/token interactive on Hopper |
-| [NVFP4-FP8-MTP](https://huggingface.co/canada-quant/GLM-5.2-NVFP4-FP8-MTP) · [src](https://github.com/canada-quant/glm52-nvfp4-fp8-mtp) | GLM-5.2 | NVFP4 g=16 | yes (BF16) | ~410 GB | B200 / B300 | best Blackwell-native interactive |
+| Repo | Routed experts | MTP | On-disk | Hardware | Notes |
+|---|---|---|---|---|---|
+| [GLM-5.2-W4A16-MTP](https://huggingface.co/canada-quant/GLM-5.2-W4A16-MTP) | W4A16 INT4 g=128 (GPTQ) | yes (BF16, layer 78) | ~405 GB | 4×H200 (≤128K) · 8×H200 (1M) | matches FP8 quality; fastest 4-bit GLM-5.2 quant at interactive concurrency |
 
-Same MoE ignore topology across all three: `lm_head`, `embed_tokens`, dense layers 0-2, `self_attn`, `mlp.gate` (router — never quantized), `shared_expert`, MTP layer 78, DSA indexer/compressor. 3-pass calibration (coding/broad/deep long-context) per lukealonso/GLM-5.2-NVFP4 methodology.
-
-Quality recovery pipeline (canada-quant differentiator vs dsv4 family): EAQuant router recalibration → NVIDIA QAD distillation from BF16 teacher → Recover-LoRA selective mixed-precision.
+**Validated** against the official FP8 release (same harness, 8×H200): matches on GSM8K (0.960), IFEval (0.909/0.911), MATH-500 (0.954), RULER@32K/64K, and SWE-bench Verified (82.0% vs 82.2%) — serves at 1M context on 8×H200, and on 4×H200 up to ~128K. **Throughput** vs the most-downloaded community 4-bit quants: leads the interactive regime — **+69–79% at concurrency 1** vs AWQ-INT4 / NVFP4 — from the MTP draft head (neither competitor ships one); the no-MTP quants edge ahead only at full saturation. `calibrate_all_experts=True` on an in-distribution code/instruction set held quality with no separate recovery pipeline. Full recipe, eval methodology, and an engineering log accompany the release.
